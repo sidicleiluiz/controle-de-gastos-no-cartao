@@ -10,25 +10,24 @@
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     
     <script type="module">
-	import { initializeApp } from "firebase/app";
-	import { getAnalytics } from "firebase/analytics";
-	// TODO: Add SDKs for Firebase products that you want to use
-	// https://firebase.google.com/docs/web/setup#available-libraries
+        // IMPORTAÇÕES CORRETAS PARA NAVEGADOR (CDN)
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
+        import { getFirestore, collection, addDoc, onSnapshot, doc, deleteDoc, updateDoc, query, orderBy } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 
-        // CONFIGURAÇÃO DO FIREBASE (COLE SEUS DADOS AQUI)
+        // CONFIGURAÇÃO DO FIREBASE (MANTIDA AS SUAS CHAVES)
         const firebaseConfig = {
- 	apiKey: "AIzaSyCyqzNYyXlAi-Zem5LsYbSB0sv7yKm6nps",
- 	authDomain: "controle-de-gastos-no-cartao.firebaseapp.com",
-  	projectId: "controle-de-gastos-no-cartao",
-  	storageBucket: "controle-de-gastos-no-cartao.firebasestorage.app",
-  	messagingSenderId: "774835741917",
-  	appId: "1:774835741917:web:263838cba2af507e746734",
-  	measurementId: "G-1R894Y6VZE"
+            apiKey: "AIzaSyCyqzNYyXlAi-Zem5LsYbSB0sv7yKm6nps",
+            authDomain: "controle-de-gastos-no-cartao.firebaseapp.com",
+            projectId: "controle-de-gastos-no-cartao",
+            storageBucket: "controle-de-gastos-no-cartao.firebasestorage.app",
+            messagingSenderId: "774835741917",
+            appId: "1:774835741917:web:263838cba2af507e746734",
+            measurementId: "G-1R894Y6VZE"
         };
 
-	// Initialize Firebase
-	const app = initializeApp(firebaseConfig);
-	const analytics = getAnalytics(app);
+        // INICIALIZAÇÃO
+        const app = initializeApp(firebaseConfig);
+        const db = getFirestore(app);
 
         // VARIÁVEIS GLOBAIS
         window.gastos = [];
@@ -40,23 +39,21 @@
 
         // --- SINCRONIZAÇÃO EM TEMPO REAL ---
         
-        // 1. Escutar Gastos
         onSnapshot(collection(db, "gastos"), (snapshot) => {
             window.gastos = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
             renderizarDashboards();
-            if(document.getElementById('sec-compras').classList.contains('hidden') === false) renderizarCompras();
-            if(document.getElementById('sec-detalhe').classList.contains('hidden') === false) renderizarDetalhesFatura();
-            if(document.getElementById('sec-categorias').classList.contains('hidden') === false) renderizarCategorias();
+            if(!document.getElementById('sec-compras').classList.contains('hidden')) renderizarCompras();
+            if(!document.getElementById('sec-detalhe').classList.contains('hidden')) renderizarDetalhesFatura();
+            if(!document.getElementById('sec-categorias').classList.contains('hidden')) renderizarCategorias();
         });
 
-        // 2. Escutar Pagamentos
         onSnapshot(collection(db, "pagamentos"), (snapshot) => {
             window.historicoPagos = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
             renderizarHistoricoPagos();
             renderizarDashboards();
         });
 
-        // --- FUNÇÕES DE INTERAÇÃO COM FIREBASE ---
+        // --- FUNÇÕES DE INTERAÇÃO ---
 
         window.salvarGasto = async (e) => {
             e.preventDefault();
@@ -69,15 +66,17 @@
                 pagos: [],
                 createdAt: new Date()
             };
-            await addDoc(collection(db, "gastos"), novoGasto);
-            document.getElementById('gastoForm').reset();
-            switchTab('compras');
+            try {
+                await addDoc(collection(db, "gastos"), novoGasto);
+                document.getElementById('gastoForm').reset();
+                switchTab('compras');
+            } catch (err) { alert("Erro ao salvar: Verifique as regras do seu Firebase."); }
         };
 
         window.estornarCompra = async (id) => {
             const g = window.gastos.find(x => x.id === id);
             if(g.pagos && g.pagos.length > 0) return alert("Estorne os pagamentos desta compra primeiro.");
-            if(confirm("Remover esta compra permanentemente de todos os aparelhos?")) {
+            if(confirm("Remover esta compra permanentemente?")) {
                 await deleteDoc(doc(db, "gastos", id));
             }
         };
@@ -89,7 +88,8 @@
 
             for(let g of window.gastos) {
                 const d = new Date(g.data + "T00:00:00"), iniV = new Date(d.getFullYear(), d.getMonth() + 1, 1), fimV = new Date(d.getFullYear(), d.getMonth() + g.parcelas, 1);
-                if (new Date(hoje.getFullYear(), hoje.getMonth() + 1, 1) >= iniV && new Date(hoje.getFullYear(), hoje.getMonth() + 1, 1) <= fimV && (!g.pagos || !g.pagos.includes(compRef))) {
+                const dataRef = new Date(hoje.getFullYear(), hoje.getMonth() + 1, 1);
+                if (dataRef >= iniV && dataRef <= fimV && (!g.pagos || !g.pagos.includes(compRef))) {
                     totalBaixado += (g.valor / g.parcelas);
                     const docRef = doc(db, "gastos", g.id);
                     await updateDoc(docRef, { pagos: [...(g.pagos || []), compRef] });
@@ -100,34 +100,41 @@
                 dataPagamentoReal: new Date(document.getElementById('dataPagamentoReal').value + "T00:00:00").toLocaleDateString('pt-br'),
                 competencia: compRef,
                 valor: totalBaixado,
-                vencimentoOriginal: vencimentoFormatado
+                vencimentoOriginal: vencimentoFormatado,
+                createdAt: new Date()
             });
             fecharModal();
             switchTab('hist');
         };
 
-        // --- RESTANTE DA LÓGICA DE INTERFACE ---
-        // (A mesma lógica da V31, apenas chamando os dados de window.gastos)
+        // --- LÓGICA DE INTERFACE ---
         
         window.configurarFiltros = () => {
             const fMes = document.querySelectorAll('#filtroMesCat, #fMesCompra, #fMesDet');
             const fAno = document.querySelectorAll('#filtroAnoCat, #fAnoCompra, #fAnoDet');
             const fCatFiltros = document.querySelectorAll('#fCatCompra, #fCatDet');
             const hoje = new Date(), anoC = hoje.getFullYear(), mesC = hoje.getMonth();
-            fMes.forEach(s => mesesNomes.forEach((m, i) => { let opt = document.createElement('option'); opt.value = i; opt.innerHTML = m; s.appendChild(opt); }));
-            fAno.forEach(s => { for(let a = anoC - 1; a <= anoC + 2; a++) { let opt = document.createElement('option'); opt.value = a; opt.innerHTML = a; s.appendChild(opt); } });
+            
+            fMes.forEach(s => { s.innerHTML = ""; mesesNomes.forEach((m, i) => { let opt = document.createElement('option'); opt.value = i; opt.innerHTML = m; s.appendChild(opt); })});
+            fAno.forEach(s => { s.innerHTML = ""; for(let a = anoC - 1; a <= anoC + 2; a++) { let opt = document.createElement('option'); opt.value = a; opt.innerHTML = a; s.appendChild(opt); }});
             fCatFiltros.forEach(s => {
-                let all = document.createElement('option'); all.value = "TODAS"; all.innerHTML = "TODAS AS CATEGORIAS"; s.appendChild(all);
+                s.innerHTML = '<option value="TODAS">TODAS AS CATEGORIAS</option>';
                 categoriasLista.forEach(c => { let opt = document.createElement('option'); opt.value = c; opt.innerHTML = c; s.appendChild(opt); });
             });
-            categoriasLista.forEach(c => { let opt = document.createElement('option'); opt.value = c; opt.innerHTML = c; document.getElementById('categoria').appendChild(opt); });
+            
+            const catSelect = document.getElementById('categoria');
+            catSelect.innerHTML = "";
+            categoriasLista.forEach(c => { let opt = document.createElement('option'); opt.value = c; opt.innerHTML = c; catSelect.appendChild(opt); });
+            
             document.getElementById('filtroMesCat').value = (mesC + 1) % 12;
             document.getElementById('filtroAnoCat').value = (mesC === 11) ? anoC + 1 : anoC;
             document.getElementById('fMesCompra').value = mesC;
             document.getElementById('fAnoCompra').value = anoC;
             document.getElementById('fMesDet').value = (mesC + 1) % 12;
             document.getElementById('fAnoDet').value = (mesC === 11) ? anoC + 1 : anoC;
+
             const selectP = document.getElementById('parcelas');
+            selectP.innerHTML = "";
             for(let i=1; i<=24; i++) { let opt = document.createElement('option'); opt.value = i; opt.innerHTML = i === 1 ? 'À vista' : i + 'x parcelas'; selectP.appendChild(opt); }
         };
 
@@ -163,7 +170,7 @@
             document.getElementById('totalParcelado').innerText = formatar(saldoParcelado);
             document.getElementById('totalAberto').innerText = formatar(saldoAVista + saldoParcelado);
             document.getElementById('btnLiquidar').classList.toggle('hidden', totalFaturaPendente === 0);
-            document.getElementById('statusPagamentoFatura').innerHTML = totalFaturaPendente === 0 && window.gastos.length > 0 ? '<span class="bg-emerald-100 text-emerald-700 px-4 py-1 rounded-full text-[10px] font-bold">FATURA PAGA</span>' : '';
+            document.getElementById('statusPagamentoFatura').innerHTML = (totalFaturaPendente === 0 && window.gastos.length > 0) ? '<span class="bg-emerald-100 text-emerald-700 px-4 py-1 rounded-full text-[10px] font-bold">FATURA PAGA</span>' : '';
         };
 
         window.renderizarCompras = () => {
@@ -177,7 +184,7 @@
             document.getElementById('totalAbaCompras').innerText = formatar(subtotal);
             const lista = document.getElementById('listaCompras');
             lista.innerHTML = filtrados.length ? '' : '<p class="text-center text-slate-400 py-10 text-xs font-bold uppercase">Nenhum registro</p>';
-            filtrados.reverse().forEach(g => {
+            [...filtrados].reverse().forEach(g => {
                 lista.innerHTML += `<div class="card-white p-5 flex justify-between items-center"><div><p class="text-sm font-bold">${g.descricao}</p><p class="text-[9px] text-slate-400 font-bold uppercase">${g.categoria} • ${g.parcelas}x</p></div><div class="flex items-center gap-4"><p class="font-bold text-sm">${formatar(g.valor)}</p><button onclick="estornarCompra('${g.id}')" class="text-slate-300 hover:text-rose-500"><i class="bi bi-trash3"></i></button></div></div>`;
             });
         };
@@ -267,8 +274,12 @@
         };
 
         window.fecharModal = () => document.getElementById('modalBaixa').classList.add('hidden');
-        window.addEventListener('load', () => { configurarFiltros(); document.getElementById('dataAtual').innerText = new Date().toLocaleDateString('pt-br', { day: '2-digit', month: 'long', year: 'numeric' }); });
-        document.getElementById('gastoForm').addEventListener('submit', window.salvarGasto);
+        
+        window.addEventListener('load', () => { 
+            configurarFiltros(); 
+            document.getElementById('dataAtual').innerText = new Date().toLocaleDateString('pt-br', { day: '2-digit', month: 'long', year: 'numeric' }); 
+            document.getElementById('gastoForm').addEventListener('submit', window.salvarGasto);
+        });
 
     </script>
 
@@ -307,7 +318,7 @@
     <header class="sticky-header">
         <div class="max-w-6xl mx-auto px-6 py-5 flex justify-between items-center">
             <h1 class="text-sm font-extrabold text-indigo-600 flex items-center gap-2 tracking-tight uppercase">
-                <i class="bi bi-credit-card-2-back-fill"></i> CONTROLE DE GASTOS NO CARTÃO DE CRÉDITO
+                <i class="bi bi-credit-card-2-back-fill"></i> CONTROLE DE GASTOS
             </h1>
             <span id="dataAtual" class="text-[9px] font-bold text-slate-400 uppercase tracking-widest"></span>
         </div>
