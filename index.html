@@ -10,11 +10,9 @@
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     
     <script type="module">
-        // IMPORTAÇÕES CORRETAS PARA NAVEGADOR (CDN)
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
         import { getFirestore, collection, addDoc, onSnapshot, doc, deleteDoc, updateDoc, query, orderBy } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 
-        // CONFIGURAÇÃO DO FIREBASE (MANTIDA AS SUAS CHAVES)
         const firebaseConfig = {
             apiKey: "AIzaSyCyqzNYyXlAi-Zem5LsYbSB0sv7yKm6nps",
             authDomain: "controle-de-gastos-no-cartao.firebaseapp.com",
@@ -25,11 +23,9 @@
             measurementId: "G-1R894Y6VZE"
         };
 
-        // INICIALIZAÇÃO
         const app = initializeApp(firebaseConfig);
         const db = getFirestore(app);
 
-        // VARIÁVEIS GLOBAIS
         window.gastos = [];
         window.historicoPagos = [];
         let meuGrafico = null;
@@ -37,8 +33,6 @@
         const categoriasLista = ["Supermercado", "Lanche", "Almoço em Restaurante", "Comunicação", "Concurso", "Eletrodoméstico", "Entretenimento", "Financiamento Estudantil", "Gastos Esporádicos", "Gastos Pessoais - Sidiclei", "Gastos Pessoais - Glasy", "Impostos e Taxas", "Moradia", "Roupas/Calçados", "Saúde - Médico/Dentista/Farmácia/Academia", "Seguro", "Sorteios", "Transporte", "Viagem"].sort();
         const mesesNomes = ["Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "Set", "Out", "Nov", "Dez"];
 
-        // --- SINCRONIZAÇÃO EM TEMPO REAL ---
-        
         onSnapshot(collection(db, "gastos"), (snapshot) => {
             window.gastos = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
             renderizarDashboards();
@@ -52,8 +46,6 @@
             renderizarHistoricoPagos();
             renderizarDashboards();
         });
-
-        // --- FUNÇÕES DE INTERAÇÃO ---
 
         window.salvarGasto = async (e) => {
             e.preventDefault();
@@ -107,12 +99,11 @@
             switchTab('hist');
         };
 
-        // --- LÓGICA DE INTERFACE ---
-        
         window.configurarFiltros = () => {
             const fMes = document.querySelectorAll('#filtroMesCat, #fMesCompra, #fMesDet');
             const fAno = document.querySelectorAll('#filtroAnoCat, #fAnoCompra, #fAnoDet');
             const fCatFiltros = document.querySelectorAll('#fCatCompra, #fCatDet');
+            const fDiaCompra = document.getElementById('fDiaCompra');
             const hoje = new Date(), anoC = hoje.getFullYear(), mesC = hoje.getMonth();
             
             fMes.forEach(s => { s.innerHTML = ""; mesesNomes.forEach((m, i) => { let opt = document.createElement('option'); opt.value = i; opt.innerHTML = m; s.appendChild(opt); })});
@@ -122,6 +113,9 @@
                 categoriasLista.forEach(c => { let opt = document.createElement('option'); opt.value = c; opt.innerHTML = c; s.appendChild(opt); });
             });
             
+            fDiaCompra.innerHTML = '<option value="TODOS">DIA</option>';
+            for(let i=1; i<=31; i++) { let opt = document.createElement('option'); opt.value = i; opt.innerHTML = i; fDiaCompra.appendChild(opt); }
+
             const catSelect = document.getElementById('categoria');
             catSelect.innerHTML = "";
             categoriasLista.forEach(c => { let opt = document.createElement('option'); opt.value = c; opt.innerHTML = c; catSelect.appendChild(opt); });
@@ -174,33 +168,56 @@
         };
 
         window.renderizarCompras = () => {
-            const mes = parseInt(document.getElementById('fMesCompra').value), ano = parseInt(document.getElementById('fAnoCompra').value), cat = document.getElementById('fCatCompra').value;
+            const mes = parseInt(document.getElementById('fMesCompra').value), 
+                  ano = parseInt(document.getElementById('fAnoCompra').value), 
+                  dia = document.getElementById('fDiaCompra').value,
+                  cat = document.getElementById('fCatCompra').value;
             let subtotal = 0;
+            
             const filtrados = window.gastos.filter(g => {
                 const d = new Date(g.data + "T00:00:00");
-                const match = d.getMonth() === mes && d.getFullYear() === ano && (cat === "TODAS" || g.categoria === cat);
+                const matchDia = (dia === "TODOS" || d.getDate() === parseInt(dia));
+                const match = d.getMonth() === mes && d.getFullYear() === ano && (cat === "TODAS" || g.categoria === cat) && matchDia;
                 if(match) subtotal += g.valor; return match;
             });
+
+            // Ordenação: mais recente primeiro
+            filtrados.sort((a, b) => new Date(b.data + "T00:00:00") - new Date(a.data + "T00:00:00"));
+
             document.getElementById('totalAbaCompras').innerText = formatar(subtotal);
             const lista = document.getElementById('listaCompras');
             lista.innerHTML = filtrados.length ? '' : '<p class="text-center text-slate-400 py-10 text-xs font-bold uppercase">Nenhum registro</p>';
-            [...filtrados].reverse().forEach(g => {
-                lista.innerHTML += `<div class="card-white p-5 flex justify-between items-center"><div><p class="text-sm font-bold">${g.descricao}</p><p class="text-[9px] text-slate-400 font-bold uppercase">${g.categoria} • ${g.parcelas}x</p></div><div class="flex items-center gap-4"><p class="font-bold text-sm">${formatar(g.valor)}</p><button onclick="estornarCompra('${g.id}')" class="text-slate-300 hover:text-rose-500"><i class="bi bi-trash3"></i></button></div></div>`;
+            
+            filtrados.forEach(g => {
+                const dataFmt = new Date(g.data + "T00:00:00").toLocaleDateString('pt-br');
+                lista.innerHTML += `<div class="card-white p-5 flex justify-between items-center"><div><p class="text-sm font-bold">${g.descricao}</p><p class="text-[9px] text-slate-400 font-bold uppercase">${dataFmt} • ${g.categoria} • ${g.parcelas}x</p></div><div class="flex items-center gap-4"><p class="font-bold text-sm">${formatar(g.valor)}</p><button onclick="estornarCompra('${g.id}')" class="text-slate-300 hover:text-rose-500"><i class="bi bi-trash3"></i></button></div></div>`;
             });
         };
 
         window.renderizarDetalhesFatura = () => {
             const mesAlvo = parseInt(document.getElementById('fMesDet').value), anoAlvo = parseInt(document.getElementById('fAnoDet').value), catAlvo = document.getElementById('fCatDet').value;
             const dataVencimentoFiltro = new Date(anoAlvo, mesAlvo, 1);
-            let totalPeriodo = 0, html = "";
+            let totalPeriodo = 0, itensFatura = [];
+            
             window.gastos.forEach(g => {
                 const dComp = new Date(g.data + "T00:00:00");
                 const numParcela = (dataVencimentoFiltro.getFullYear() - dComp.getFullYear()) * 12 + (dataVencimentoFiltro.getMonth() - dComp.getMonth());
                 if (numParcela >= 1 && numParcela <= g.parcelas && (catAlvo === "TODAS" || g.categoria === catAlvo)) {
-                    const valorParc = g.valor / g.parcelas; totalPeriodo += valorParc;
-                    html += `<div class="card-white p-5 flex justify-between items-center"><div><p class="text-sm font-bold">${g.descricao}</p><p class="text-[9px] text-indigo-600 font-bold uppercase">Parcela ${numParcela}/${g.parcelas} • ${g.categoria}</p></div><p class="font-bold text-sm">${formatar(valorParc)}</p></div>`;
+                    itensFatura.push({ ...g, numParcela });
+                    totalPeriodo += (g.valor / g.parcelas);
                 }
             });
+
+            // Ordenação: mais recente primeiro
+            itensFatura.sort((a, b) => new Date(b.data + "T00:00:00") - new Date(a.data + "T00:00:00"));
+
+            let html = "";
+            itensFatura.forEach(g => {
+                const valorParc = g.valor / g.parcelas;
+                const dataFmt = new Date(g.data + "T00:00:00").toLocaleDateString('pt-br');
+                html += `<div class="card-white p-5 flex justify-between items-center"><div><p class="text-sm font-bold">${g.descricao}</p><p class="text-[9px] text-indigo-600 font-bold uppercase">${dataFmt} • Parcela ${g.numParcela}/${g.parcelas} • ${g.categoria}</p></div><p class="font-bold text-sm">${formatar(valorParc)}</p></div>`;
+            });
+
             document.getElementById('totalDetalheFatura').innerText = formatar(totalPeriodo);
             document.getElementById('listaDetalhesFatura').innerHTML = html || '<p class="text-center text-slate-400 py-10 text-xs font-bold uppercase">Vazio</p>';
         };
@@ -366,6 +383,7 @@
 
         <section id="sec-compras" class="hidden animate-in space-y-4">
             <div class="card-white p-4 flex flex-wrap gap-2">
+                <select id="fDiaCompra" onchange="renderizarCompras()" class="bg-slate-100 border-none p-2 rounded-lg text-xs font-bold"></select>
                 <select id="fMesCompra" onchange="renderizarCompras()" class="bg-slate-100 border-none p-2 rounded-lg text-xs font-bold"></select>
                 <select id="fAnoCompra" onchange="renderizarCompras()" class="bg-slate-100 border-none p-2 rounded-lg text-xs font-bold"></select>
                 <select id="fCatCompra" onchange="renderizarCompras()" class="flex-grow bg-slate-100 border-none p-2 rounded-lg text-xs font-bold"></select>
